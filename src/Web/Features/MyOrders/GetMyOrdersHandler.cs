@@ -1,43 +1,91 @@
-﻿using MediatR;
-using Microsoft.eShopWeb.ApplicationCore.Interfaces;
-using Microsoft.eShopWeb.ApplicationCore.Specifications;
-using Microsoft.eShopWeb.Web.ViewModels;
+﻿using System;
+using MediatR;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.eShopWeb.Infrastructure.Data;
 
 namespace Microsoft.eShopWeb.Web.Features.MyOrders
 {
-    public class GetMyOrdersHandler : IRequestHandler<GetMyOrders, IEnumerable<OrderViewModel>>
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [Authorize] // Controllers that mainly require Authorization still use Controller/View; other pages use Pages
+    public class GetMyOrdersController : Controller
     {
-        private readonly IOrderRepository _orderRepository;
+        private readonly IMediator _mediator;
 
-        public GetMyOrdersHandler(IOrderRepository orderRepository)
+        public GetMyOrdersController(IMediator mediator)
         {
-            _orderRepository = orderRepository;
+            _mediator = mediator;
         }
 
-        public async Task<IEnumerable<OrderViewModel>> Handle(GetMyOrders request, CancellationToken cancellationToken)
+        [HttpGet("/order/my-orders")]
+        public async Task<IActionResult> MyOrders()
         {
-            var specification = new CustomerOrdersWithItemsSpecification(request.UserName);
-            var orders = await _orderRepository.ListAsync(specification);
-
-            return orders.Select(o => new OrderViewModel
+            var viewModel = await _mediator.Send(new GetMyOrders(User.Identity.Name));
+            if (HttpContext.Request.Headers["Accept"] == "application/json")
             {
-                OrderDate = o.OrderDate,
-                OrderItems = o.OrderItems?.Select(oi => new OrderItemViewModel()
+                return Ok(viewModel);
+            }
+            else
+            {
+                return View("/Features/MyOrders/GetMyOrders.cshtml", viewModel);    
+            }
+        }
+    }
+
+    public class GetMyOrders : IRequest<MyOrdersViewModel>
+    {
+        public string UserName { get; set; }
+
+        public GetMyOrders(string userName)
+        {
+            UserName = userName;
+        }
+    }
+    
+    public class MyOrdersViewModel
+    {
+        public IEnumerable<OrderSummaryViewModel> Orders { get; set; }
+    }
+    
+    public class OrderSummaryViewModel
+    {
+        private const string DEFAULT_STATUS = "Pending";
+
+        public int OrderNumber { get; set; }
+        public DateTimeOffset OrderDate { get; set; }
+        public decimal Total { get; set; }
+        public string Status => DEFAULT_STATUS;
+    }
+    
+    public class GetMyOrdersHandler : IRequestHandler<GetMyOrders, MyOrdersViewModel>
+    {
+        private readonly CatalogContext _db;
+
+        public GetMyOrdersHandler(CatalogContext db)
+        {
+            _db = db;
+        }
+
+        public async Task<MyOrdersViewModel> Handle(GetMyOrders request, CancellationToken cancellationToken)
+        {
+            var result = new MyOrdersViewModel();
+            result.Orders = await _db.Orders
+                .Include(x => x.OrderItems)
+                .Where(x => x.BuyerId == request.UserName)
+                .Select(o => new OrderSummaryViewModel
                 {
-                    PictureUrl = oi.ItemOrdered.PictureUri,
-                    ProductId = oi.ItemOrdered.CatalogItemId,
-                    ProductName = oi.ItemOrdered.ProductName,
-                    UnitPrice = oi.UnitPrice,
-                    Units = oi.Units
-                }).ToList(),
-                OrderNumber = o.Id,
-                ShippingAddress = o.ShipToAddress,
-                Total = o.Total()
-            });
+                    OrderDate = o.OrderDate,
+                    OrderNumber = o.Id,
+                    Total = o.OrderItems.Sum(x => x.Units * x.UnitPrice),
+                })
+                .ToArrayAsync(cancellationToken: cancellationToken);
+            
+            return result;
         }
     }
 }
