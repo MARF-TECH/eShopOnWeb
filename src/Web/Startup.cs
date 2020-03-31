@@ -24,6 +24,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Mime;
+using Hangfire;
+using Hangfire.MemoryStorage;
 
 namespace Microsoft.eShopWeb.Web
 {
@@ -86,7 +88,12 @@ namespace Microsoft.eShopWeb.Web
             ConfigureCookieSettings(services);
 
             CreateIdentityIfNotCreated(services);
-
+            
+            services.AddHangfire(options =>
+            {
+                options.UseMemoryStorage();
+            });
+            
             services.AddMediatR(typeof(BasketViewModelService).Assembly);
 
             services.AddScoped(typeof(IAsyncRepository<>), typeof(EfRepository<>));
@@ -213,6 +220,9 @@ namespace Microsoft.eShopWeb.Web
                 app.UseHsts();
             }
 
+            app.UseHangfireDashboard();
+            app.UseHangfireServer();
+            
             app.UseStaticFiles();
             app.UseRouting();
             

@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Threading.Tasks;
+using Hangfire;
 
 namespace Microsoft.eShopWeb.Web.Controllers
 {
@@ -24,6 +25,7 @@ namespace Microsoft.eShopWeb.Web.Controllers
         private readonly IEmailSender _emailSender;
         private readonly IAppLogger<ManageController> _logger;
         private readonly UrlEncoder _urlEncoder;
+        private readonly IBackgroundJobClient _backgroundJobClient;
 
         private const string AuthenticatorUriFormat = "otpauth://totp/{0}:{1}?secret={2}&issuer={0}&digits=6";
 
@@ -32,13 +34,15 @@ namespace Microsoft.eShopWeb.Web.Controllers
           SignInManager<ApplicationUser> signInManager,
           IEmailSender emailSender,
           IAppLogger<ManageController> logger,
-          UrlEncoder urlEncoder)
+          UrlEncoder urlEncoder,
+          IBackgroundJobClient backgroundJobClient)
         {
             _userManager = userManager;
             _signInManager = signInManager;
             _emailSender = emailSender;
             _logger = logger;
             _urlEncoder = urlEncoder;
+            _backgroundJobClient = backgroundJobClient;
         }
 
         [TempData]
@@ -122,10 +126,11 @@ namespace Microsoft.eShopWeb.Web.Controllers
             var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             var callbackUrl = Url.EmailConfirmationLink(user.Id, code, Request.Scheme);
             var email = user.Email;
-            await _emailSender.SendEmailConfirmationAsync(email, callbackUrl);
 
+            _backgroundJobClient.Enqueue<ConfirmationEmailSender>(emailSender => emailSender.SendEmailConfirmationAsync(email, callbackUrl));
+            
             StatusMessage = "Verification email sent. Please check your email.";
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(MyAccount));
         }
 
         [HttpGet]

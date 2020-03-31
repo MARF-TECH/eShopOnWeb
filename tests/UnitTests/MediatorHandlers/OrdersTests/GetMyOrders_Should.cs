@@ -5,6 +5,8 @@ using Moq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.eShopWeb.Infrastructure.Data;
 using Xunit;
 
 namespace Microsoft.eShopWeb.UnitTests.MediatorHandlers.OrdersTests
@@ -28,7 +30,7 @@ namespace Microsoft.eShopWeb.UnitTests.MediatorHandlers.OrdersTests
         {
             var request = new GetMyOrders("SomeUserName");
 
-            var handler = new GetMyOrdersHandler(_mockOrderRepository.Object);
+            var handler = new GetMyOrdersHandler(new CatalogContext(new DbContextOptions<CatalogContext>()));
 
             var result = await handler.Handle(request, CancellationToken.None);
 
