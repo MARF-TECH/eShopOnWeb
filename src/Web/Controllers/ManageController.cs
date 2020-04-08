@@ -11,7 +11,10 @@ using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Threading.Tasks;
+using Coravel.Queuing.Interfaces;
 using Hangfire;
+using MediatR;
+using Microsoft.eShopWeb.Web.Features;
 
 namespace Microsoft.eShopWeb.Web.Controllers
 {
@@ -22,27 +25,27 @@ namespace Microsoft.eShopWeb.Web.Controllers
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
-        private readonly IEmailSender _emailSender;
         private readonly IAppLogger<ManageController> _logger;
         private readonly UrlEncoder _urlEncoder;
-        private readonly IBackgroundJobClient _backgroundJobClient;
+        private readonly IMediator _mediator;
+        private readonly IQueue _queue;
 
         private const string AuthenticatorUriFormat = "otpauth://totp/{0}:{1}?secret={2}&issuer={0}&digits=6";
 
         public ManageController(
           UserManager<ApplicationUser> userManager,
           SignInManager<ApplicationUser> signInManager,
-          IEmailSender emailSender,
           IAppLogger<ManageController> logger,
           UrlEncoder urlEncoder,
-          IBackgroundJobClient backgroundJobClient)
+          IMediator mediator,
+          IQueue queue)
         {
             _userManager = userManager;
             _signInManager = signInManager;
-            _emailSender = emailSender;
             _logger = logger;
             _urlEncoder = urlEncoder;
-            _backgroundJobClient = backgroundJobClient;
+            _mediator = mediator;
+            _queue = queue;
         }
 
         [TempData]
@@ -117,22 +120,15 @@ namespace Microsoft.eShopWeb.Web.Controllers
                 return View(model);
             }
 
-            var user = await _userManager.GetUserAsync(User);
-            if (user == null)
-            {
-                throw new ApplicationException($"Unable to load user with ID '{_userManager.GetUserId(User)}'.");
-            }
-
-            var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var callbackUrl = Url.EmailConfirmationLink(user.Id, code, Request.Scheme);
-            var email = user.Email;
-
-            _backgroundJobClient.Enqueue<ConfirmationEmailSender>(emailSender => emailSender.SendEmailConfirmationAsync(email, callbackUrl));
+            //await _mediator.Send(new SendVerificationEmailCommand(User, Request.Scheme, Request.Host));
+            _queue.QueueInvocableWithPayload<SendVerificationInvocable, SendVerificationEmailCommand>(new SendVerificationEmailCommand(User, Request.Scheme, Request.Host));
+            
+            _queue.
             
             StatusMessage = "Verification email sent. Please check your email.";
             return RedirectToAction(nameof(MyAccount));
         }
-
+        
         [HttpGet]
         public async Task<IActionResult> ChangePassword()
         {
